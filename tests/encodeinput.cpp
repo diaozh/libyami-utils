@@ -209,6 +209,11 @@ EncodeOutput* EncodeOutput::create(const char* outputFileName, int width,
              || !strcasecmp(ext, "265") || !strcasecmp(ext, "hevc")) {
         output = new EncodeOutputHEVC();
     }
+    #ifdef __ENABLE_AVFORMAT__
+    else if (strchr(outputFileName,'//') != NULL){
+        output = new EncodeOutputH264Stream();
+    }
+    #endif
     else
         return NULL;
 
