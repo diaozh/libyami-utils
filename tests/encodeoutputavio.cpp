@@ -15,7 +15,7 @@ bool EncodeOutputH264Stream::init(const char* outputFileName, int width, int hei
     int ret;
     ret = avio_open(&m_sp, outputFileName, AVIO_FLAG_WRITE);
     if (ret < 0) {
-        fprintf(stderr, "Error opening the output context: ");
+        fprintf(stderr, "Error opening the url: ");
         return false;
     }
     return true;
