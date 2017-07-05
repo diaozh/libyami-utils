@@ -1,8 +1,10 @@
 #ifndef encodeoutputavio_h
 #define encodeoutputavio_h
 
+#include "encodeinput.h"
 extern "C" {
 #include <libavformat/avio.h>
+#include <libavformat/avformat.h>
 }
 
 class EncodeOutputH264Stream : public EncodeOutput {

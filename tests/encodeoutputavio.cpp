@@ -13,6 +13,7 @@ EncodeOutputH264Stream::~EncodeOutputH264Stream()
 bool EncodeOutputH264Stream::init(const char* outputFileName, int width, int height, int fps)
 {
     int ret;
+    avformat_network_init();
     ret = avio_open(&m_sp, outputFileName, AVIO_FLAG_WRITE);
     if (ret < 0) {
         fprintf(stderr, "Error opening the url: ");
@@ -23,11 +24,11 @@ bool EncodeOutputH264Stream::init(const char* outputFileName, int width, int hei
 
 bool EncodeOutputH264Stream::write(void* data, int size)
 {
-    avio_write(m_sp, data, size);
+    avio_write(m_sp, (const unsigned char*)data, size);
     return true;
 }
 
 const char* EncodeOutputH264Stream::getMimeType()
 {
-    return "url_streaming";
+    return YAMI_MIME_H264;
 }

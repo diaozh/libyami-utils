@@ -31,9 +31,6 @@
 #include <queue>
 using namespace android;
 #endif
-#ifdef __ENABLE_AVFORMAT__
-#include "encodeoutputavio.h"
-#endif
 
 using namespace YamiMediaCodec;
 

@@ -28,6 +28,10 @@
 
 #include "encodeinput.h"
 #include "encodeInputDecoder.h"
+#ifdef __ENABLE_AVFORMAT__
+#include "encodeoutputavio.h"
+#endif
+
 
 using namespace YamiMediaCodec;
 
@@ -210,7 +214,7 @@ EncodeOutput* EncodeOutput::create(const char* outputFileName, int width,
         output = new EncodeOutputHEVC();
     }
     #ifdef __ENABLE_AVFORMAT__
-    else if (strchr(outputFileName,'//') != NULL){
+    else if (strstr(outputFileName, "//") != NULL){
         output = new EncodeOutputH264Stream();
     }
     #endif
