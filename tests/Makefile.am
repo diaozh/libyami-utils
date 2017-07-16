@@ -122,9 +122,40 @@ yamivpp_LDADD    = $(YAMI_VPP_LIBS)
 yamivpp_LDFLAGS  = $(YAMI_VPP_LDFLAGS)
 yamivpp_SOURCES  = vppinputdecode.cpp vppinputoutput.cpp vppoutputencode.cpp  vpp.cpp encodeinput.cpp encodeInputCamera.cpp encodeInputDecoder.cpp $(DECODE_INPUT_SOURCES) vppinputdecodecapi.cpp
 
-yamitranscode_LDADD    = $(YAMI_VPP_LIBS)
+LIBXCAM_HOME_DIR = /home/ycyang/Desktop/VE450/libxcam
+LIBYAMI_HOME_DIR = /home/ycyang/Desktop/VE450/libyami
+
+OPENCV_FLAGS = -I/usr/local/include/opencv -I/usr/local/include  
+
+XCAM_LIBDRM_CFLAGS = -I/usr/include/libdrm
+XCAM_LIBDRM_LIBS = -ldrm
+
+XCORE_LA = $(LIBXCAM_HOME_DIR)/xcore/libxcam_core.la
+XCORE_DIR = $(LIBXCAM_HOME_DIR)/xcore
+OCL_LA =  $(LIBXCAM_HOME_DIR)/modules/ocl/libxcam_ocl.la
+OCL_DIR = $(LIBXCAM_HOME_DIR)/modules/ocl
+
+XCAM_CXXFLAGS = -fPIC -DSTDC99 -W -D_REENTRANT -Wformat -Wformat-security -fstack-protector -std=c++0x
+
+XCAM_FLAG_3 = $(XCAM_LIBDRM_CFLAGS) $(XCAM_LIBDRM_LIBS)
+XCAM_FLAG_4 = -I$(LIBXCAM_HOME_DIR)/ext/atomisp $(NULL)
+
+xcam_tests_cxxflags = $(XCAM_CXXFLAGS) $(XCAM_FLAG_3) $(XCAM_FLAG_4)
+CAPI_LIBS = $(LIBXCAM_HOME_DIR)/capi/libxcam_capi.la
+XCAM_LIBS = $(XCORE_LA) $(OCL_LA)
+VPP_LIBS = $(LIBYAMI_HOME_DIR)/vpp/libyami_vpp.la
+VAAPI_LIBS = $(LIBYAMI_HOME_DIR)/vaapi/libyami_vaapi.la
+CAPI_DIR = $(LIBXCAM_HOME_DIR)/capi
+XCAM_DIR = -I$(XCORE_DIR) -I$(OCL_DIR)
+VPP_DIR = $(LIBYAMI_HOME_DIR)/vpp
+VAAPI_DIR = $(LIBYAMI_HOME_DIR)/vaapi
+
+
+yamitranscode_LDADD    = $(YAMI_VPP_LIBS) $(VPP_LIBS) $(VAAPI_LIBS) $(XCAM_LIBS) $(CAPI_LIBS) $(LIBYAMI_HOME_DIR)/common/libyami_common.la
 yamitranscode_LDFLAGS  = -pthread $(YAMI_VPP_LDFLAGS)
-yamitranscode_SOURCES  = vppinputdecode.cpp vppinputoutput.cpp vppoutputencode.cpp  yamitranscode.cpp encodeinput.cpp encodeInputCamera.cpp encodeInputDecoder.cpp $(DECODE_INPUT_SOURCES) vppinputasync.cpp vppinputdecodecapi.cpp 
+yamitranscode_SOURCES  = vppinputdecode.cpp vppinputoutput.cpp vppoutputencode.cpp  yamitranscode.cpp encodeinput.cpp encodeInputCamera.cpp encodeInputDecoder.cpp $(DECODE_INPUT_SOURCES) vppinputasync.cpp vppinputdecodecapi.cpp
+yamitranscode_CXXFLAGS = -I$(VPP_DIR) $(XCAM_DIR) $(NULL) $(OPENCV_FLAGS) $(xcam_tests_cxxflags) -I$(CAPI_DIR) -I$(VAAPI_DIR) -I$(LIBYAMI_HOME_DIR)
+
 
 bin_PROGRAMS += yamiinfo
 yamiinfo_SOURCES = yamiinfo.cpp

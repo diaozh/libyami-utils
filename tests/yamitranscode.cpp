@@ -13,10 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#define XCAM_VERSION 0x100
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
+#include "common/PooledFrameAllocator.h"
 #include "vppinputdecode.h"
 #include "vppinputoutput.h"
 #include "vppoutputencode.h"
@@ -28,7 +31,27 @@
 #include <stdlib.h>
 #include <getopt.h>
 
+#include <va/va_drmcommon.h>
+#include "vaapipostprocess_base.h"
+//#include "capi/context_priv.h"
+#include <unistd.h>
+#include "cl_device.h"
+#include "cl_context.h"
+#include "drm_display.h"
+#include "image_file_handle.h"
+#include "dma_video_buffer.h"
+#include "cl_fisheye_handler.h"
+#include "cl_image_360_stitch.h"
+#include "capi/xcam_handle.h"
+#include "capi/context_priv.h"
+#include "vaapidisplay.h"
+
+#include <iostream>
+#include <string>
+
 using namespace YamiMediaCodec;
+using namespace XCam;
+
 
 static void print_help(const char* app)
 {
@@ -306,7 +329,7 @@ SharedPtr<VppInput> createInput(TranscodeParams& para, const SharedPtr<VADisplay
     SharedPtr<VppInputFile> inputFile = DynamicPointerCast<VppInputFile>(input);
     if (inputFile) {
         SharedPtr<FrameReader> reader(new VaapiFrameReader(display));
-        SharedPtr<FrameAllocator> alloctor(new PooledFrameAllocator(display, 5));
+        SharedPtr<FrameAllocator> alloctor(new YamiMediaCodec::PooledFrameAllocator(display, 5));
         if(!inputFile->config(alloctor, reader)) {
             ERROR("config input failed");
             input.reset();
@@ -359,7 +382,7 @@ SharedPtr<FrameAllocator> createAllocator(const SharedPtr<VppOutput>& output, co
 {
     uint32_t fourcc;
     int width, height;
-    SharedPtr<FrameAllocator> allocator(new PooledFrameAllocator(display, std::max(extraSize, 5)));
+    SharedPtr<FrameAllocator> allocator(new YamiMediaCodec::PooledFrameAllocator(display, std::max(extraSize, 5)));
     if (!output->getFormat(fourcc, width, height)
         || !allocator->setFormat(fourcc, width,height)) {
         allocator.reset();
@@ -367,6 +390,163 @@ SharedPtr<FrameAllocator> createAllocator(const SharedPtr<VppOutput>& output, co
     }
     return allocator;
 }
+
+class StitchPostProcess : public VaapiPostProcessBase {
+    int flag = 0;
+    XCamHandle * stitch_handle;
+    virtual YamiStatus process(const SharedPtr<VideoFrame>& src,
+                               const SharedPtr<VideoFrame>& dest)
+	{
+        if (flag++ == 0)
+        {
+            stitch_handle = xcam_create_handle ("Stitch");
+            printf("Setting paramters!\n");
+            xcam_handle_set_parameters (stitch_handle, "width" , "1920", "height", "1080", NULL);
+
+            printf("Initializing handle!\n");
+            xcam_handle_init(stitch_handle);
+        }
+		printf("Start of Process!\n");
+		printf("Get src surface!\n");
+		VASurfaceID surface = (VASurfaceID)src->surface;
+		printf("src surface:\t%ld\n", src->surface);
+		VAImage image;
+		
+		printf("Get src Image!\n");
+		
+		VAStatus status = vaDeriveImage(m_display->getID(), surface, &image);
+		// TODO check here
+		printf("VaDeriveImage status: %d\n",status);
+		printf("Description: %s\n",vaErrorStr(status));
+		printf("Get src bufferinfo!\n");
+		VABufferInfo m_bufferInfo;
+		m_bufferInfo.mem_type = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME;
+		status = vaAcquireBufferHandle(m_display->getID(), image.buf, &m_bufferInfo);
+		printf("src fourcc:\t%s\n",&src->fourcc);
+		printf("src width:\t%u\t(Crop.width)\n",src->crop.width);
+		printf("src height:\t%u\t(Crop.height)\n",src->crop.height);
+		printf("src x:\t%u\t(Crop.x)\n",src->crop.x);
+		printf("src y:\t%u\t(Crop.y)\n",src->crop.y);
+		printf("src width:\t%u\t(Image.width)\n",image.width);
+		printf("src height:\t%u\t(Image.height)\n",image.height);
+		printf("pitches:\t%u\t(Pitches[0])\n", image.pitches[0]);
+		printf("offset: \t%u\t(Offsets[1])\n",image.offsets[1]);
+		printf("ali weight:\t%u\n",image.pitches[0]);
+		printf("ali height:\t%u\n",image.offsets[1]/image.pitches[0]);		
+		printf("handle: \t%lu\n",m_bufferInfo.handle);
+		printf("Set src dma buf!\n");
+		
+		DmaVideoBuffer *src_dma_buf;
+		VideoBufferInfo src_buf_info;
+		//VideoFrame * temp = src.get();
+
+		src_buf_info.init(src->fourcc, src->crop.width, src->crop.height, 1920, 1088);
+		src_dma_buf = new DmaVideoBuffer(src_buf_info, m_bufferInfo.handle);
+		src_dma_buf->set_timestamp (src->timeStamp);
+		printf("Get dst surface!\n");
+		VASurfaceID dest_surface = (VASurfaceID)dest->surface;
+		printf("dst surface:\t%ld\n", dest->surface);
+		VAImage dest_image;
+		printf("Get dst image!\n");
+
+		status = vaDeriveImage(m_display->getID(), dest_surface, &dest_image);
+		
+		printf("VaDeriveImage status: %d\n",status);
+		printf("Description: %s\n",vaErrorStr(status));
+		// TODO check here
+		printf("Get dst bufferinfo!\n");
+		VABufferInfo dest_m_bufferInfo;
+		dest_m_bufferInfo.mem_type = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME;
+		status = vaAcquireBufferHandle(m_display->getID(), dest_image.buf, &dest_m_bufferInfo);
+		printf("dst fourcc:\t%s\n",&dest->fourcc);
+		printf("dst width:\t%u\t(Crop.width)\n",dest->crop.width);
+		printf("dst height:\t%u\t(Crop.height)\n",dest->crop.height);
+		printf("dst x:\t%u\t(Crop.x)\n",dest->crop.x);
+		printf("dst y:\t%u\t(Crop.y)\n",dest->crop.y);
+		printf("dst width:\t%u\t(Image.width)\n",dest_image.width);
+		printf("dst height:\t%u\t(Image.height)\n",dest_image.height);
+		printf("pitches:\t%u\t(Pitches[0])\n", dest_image.pitches[0]);
+		printf("offset: \t%u\t(Offsets[1])\n",dest_image.offsets[1]);
+		printf("ali weight:\t%u\n",dest_image.pitches[0]);
+		printf("ali height:\t%u\n",dest_image.offsets[1]/dest_image.pitches[0]);	
+		printf("handle: \t%lu\n",dest_m_bufferInfo.handle);
+		
+		printf("Set dst dma buf!\n");
+		DmaVideoBuffer *dest_dma_buf;
+		VideoBufferInfo dest_buf_info;
+		dest_buf_info.init(src->fourcc, 1920, 960, 1920, 960);
+		dest_dma_buf = new DmaVideoBuffer(dest_buf_info, dest_m_bufferInfo.handle);
+		dest_dma_buf->set_timestamp(dest->timeStamp);
+		
+		printf("Start stiching!\n");
+		//xcam_handle_set_parameters ( XCamHandle *handle, const char *field, ...) need to set some params like fisheye, etc.
+		printf("Hanlde ptr:\t%02X\n",stitch_handle);
+
+
+		printf("Getting usage!\n");
+		//char * usage_buf = nullptr;
+		//int len = 1024;
+		//xcam_handle_get_usage(stitch_handle, usage_buf, &len);
+
+
+		printf("Release Buffer Handle!\n");
+		
+		auto srcImageID = image.image_id;
+		auto destImageID = dest_image.image_id;
+
+		// Fix the following four releases/destroys.
+		// There positions matter a lot.
+
+
+
+		printf("Execute!\n");
+		xcam_handle_execute (stitch_handle, src_dma_buf, &dest_dma_buf);
+
+        /*****************************************************************/
+        status = vaReleaseBufferHandle(m_display->getID(),dest_image.buf);
+        printf("release dest buffer handle: %s\n",vaErrorStr(status));
+
+        status = vaReleaseBufferHandle(m_display->getID(),image.buf);
+        printf("Release src buffer handle: %s\n",vaErrorStr(status));
+
+        status = vaDestroyImage(m_display->getID(),destImageID);
+        printf("Destroy dest image: %s\n",vaErrorStr(status));
+
+        status = vaDestroyImage(m_display->getID(),srcImageID);
+        printf("Destroy src image: %s\n",vaErrorStr(status));
+        /*****************************************************************/
+
+		printf("Copy parameters to dst!\n");
+		const VideoBufferInfo &final_buf_info = dest_dma_buf->get_video_info();
+		//assert(dest->surface == dest_dma_buf->get_fd());
+		assert(dest_dma_buf->get_timestamp() == src->timeStamp);
+		assert(dest_dma_buf->get_timestamp() == dest->timeStamp);
+		//dest->timeStamp = src->timeStamp;
+		dest->crop = src->crop;
+		printf("Final width:\t%u\n",final_buf_info.width);
+		dest->crop.width = final_buf_info.width;
+		printf("Final height:\t%u\n",final_buf_info.height);
+		dest->crop.height = final_buf_info.height;
+		//printf("Final fourcc:\t%s\n",final_buf_info.fourcc);
+		dest->fourcc = src->fourcc;
+
+        printf("uinit xcam handle\n");
+        printf("deallocating dma_buf\n");
+//        delete(dest_dma_buf);
+//        delete(src_dma_buf);
+        //xcam_handle_uinit (stitch_handle);
+
+		printf("********************************************************************************\n");
+		printf("****************************** End of Iteration ********************************\n");
+		printf("********************************************************************************\n");
+		//std::string qwerty;
+		//std::cin >> qwerty;
+
+		return YAMI_SUCCESS;
+		
+	}
+
+};
 
 class TranscodeTest
 {
@@ -439,7 +619,10 @@ private:
         NativeDisplay nativeDisplay;
         nativeDisplay.type = NATIVE_DISPLAY_VA;
         nativeDisplay.handle = (intptr_t)*m_display;
-        m_vpp.reset(createVideoPostProcess(YAMI_VPP_SCALER), releaseVideoPostProcess);
+        if (0)	
+			m_vpp.reset(createVideoPostProcess(YAMI_VPP_SCALER), releaseVideoPostProcess);
+		else
+			m_vpp.reset(new StitchPostProcess, releaseVideoPostProcess);
         return m_vpp->setNativeDisplay(nativeDisplay) == YAMI_SUCCESS;
     }
 
